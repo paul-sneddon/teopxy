@@ -65,6 +65,9 @@ def create_patch_json(output_dir, audio_files, metadata, total_duration_ms, num_
         with open(original_json_path, "w") as f:
             json.dump(metadata, f, indent=2)
         print(f"Exported {original_json_path}")
+    # Else create an empty metadata object
+    else:
+        metadata = {}
 
     preset = {
         "engine": {
@@ -132,8 +135,10 @@ def create_patch_json(output_dir, audio_files, metadata, total_duration_ms, num_
         pitch_value = metadata.get("pitch", [0]*24)[i]
         transpose = pitch_value // 512  # Convert pitch to semitone transpose
 
-        volume_value = metadata.get("volume", [0]*24)[i]
+        volume_value = metadata.get("volume", [8192]*24)[i]
         gain = __map_gain(volume_value)
+
+        # print(f"Region {i + 1}: {audio_file}, frames={frame_count}, playmode={playmode_str}, transpose={transpose}, volume={volume_value}, gain={gain}")
 
         region = {
             "fade.in": 0,
@@ -186,17 +191,22 @@ def assign_samples_to_layout(wav_files, layout):
         if isinstance(keywords, list):
             return all(keyword in sample_name for keyword in keywords)
         return keywords in sample_name
-
+    print("Assigning matched samples to drum layout:\n")
     for key, keywords in assignments.items():
         for wav_file in wav_files:
             if wav_file not in used_files and match_keywords(wav_file.lower(), keywords):
                 result[key - 1] = wav_file
+                print(f"Key {key}: {wav_file}")
                 used_files.add(wav_file)
                 break
 
+    print("Assigning unmatched samples to drum layout:\n")
     unused_files = [f for f in wav_files if f not in used_files]
     for i in range(24):
         if result[i] is None and unused_files:
+            # Print the key number and the file name along with matching keywords
+            print(f"Key {i + 1}: {unused_files[0]}")
+
             result[i] = unused_files.pop(0)
 
     return result
