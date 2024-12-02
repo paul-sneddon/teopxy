@@ -287,7 +287,7 @@ def split_op1_drum_patch(file_path):
     audio_files = []
 
     # Determine max length in seconds based on total duration
-    max_length_seconds = 20 if total_duration_ms > 12000 else 12
+    max_length_seconds = 20 if(total_duration_ms > 12000) or (num_channels > 1) else 12
 
     print(f"Max length: {max_length_seconds} seconds")
 
