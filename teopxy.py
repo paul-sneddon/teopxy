@@ -1,7 +1,10 @@
+#!python3
+
 import os
 import sys
 import struct
 import json
+import math
 from pydub import AudioSegment
 
 MAXENDPOINT = 2147483646
@@ -52,11 +55,59 @@ def parse_op1_metadata(file_path):
 
     return metadata, totalsamples
 
-# Gain mapping
-def __map_gain(value):
-    if value is None:
-        return 0
-    return int((value / 409.6)) - 20
+# I can't figure out a simple function to map the values
+def __map_gain(x):
+    """
+    Converts a value from the range 0 to 32767 to a range of -30 to +20 based on defined key points.
+
+    Key Points:
+        0      => -30
+        4,096  => -15
+        8,192  => 0
+        16,384 => 10
+        32,768 => 20
+
+    Parameters:
+        x (int or float): The input value to be converted. Expected range is 0 to 32767.
+
+    Returns:
+        float: The converted value in the range -30 to +20.
+    """
+
+    # Define the key points as (input, output) tuples
+    key_points = [
+        (0, -30),
+        (4096, -15),
+        (8192, 0),
+        (16384, 10),
+        (32768, 20)  # Note: 32768 is included to handle the upper bound
+    ]
+
+    # Clamp the input value to the valid range
+    if x < 0:
+        x = 0
+    elif x > 32767:
+        x = 32767
+
+    # Iterate through the key points to find the appropriate interval
+    for i in range(len(key_points) - 1):
+        x0, y0 = key_points[i]
+        x1, y1 = key_points[i + 1]
+
+        if x <= x1:
+            # Calculate the proportion (t) of how far x is between x0 and x1
+            if x1 == x0:
+                t = 0
+            else:
+                t = (x - x0) / (x1 - x0)
+
+            # Perform linear interpolation
+            y = y0 + t * (y1 - y0)
+            return y
+
+    # If x exceeds the last key point, return the last y value
+    return key_points[-1][1]
+
 
 # Patch JSON creation
 def create_patch_json(output_dir, audio_files, metadata, total_duration_ms, num_channels):
@@ -138,7 +189,7 @@ def create_patch_json(output_dir, audio_files, metadata, total_duration_ms, num_
         volume_value = metadata.get("volume", [8192]*24)[i]
         gain = __map_gain(volume_value)
 
-        # print(f"Region {i + 1}: {audio_file}, frames={frame_count}, playmode={playmode_str}, transpose={transpose}, volume={volume_value}, gain={gain}")
+        print(f"Region {i + 1}: {audio_file}, frames={frame_count}, playmode={playmode_str}, transpose={transpose}, volume={volume_value}, gain={round(gain)}")
 
         region = {
             "fade.in": 0,
@@ -146,7 +197,7 @@ def create_patch_json(output_dir, audio_files, metadata, total_duration_ms, num_
             "framecount": frame_count,
             "hikey": 53 + i,
             "lokey": 53 + i,
-            "gain": gain,
+            "gain": round(gain),
             "pan": 0,
             "pitch.keycenter": 60,
             "playmode": playmode_str,
@@ -313,10 +364,14 @@ if __name__ == "__main__":
     command = sys.argv[1].lower()
     path = sys.argv[2]
     layout = "standard"
+    output_dir = None
 
     # Check for optional layout parameter
     if len(sys.argv) > 3 and sys.argv[3].startswith("--layout="):
         layout = sys.argv[3].split("=")[1].lower()
+    # # Check for optional output directory parameter
+    # if len(sys.argv) > 4 and sys.argv[4].startswith("--output="):
+    #     output_dir = sys.argv[4].split("=")[1]
 
     if command == "convert":
         split_op1_drum_patch(path)
