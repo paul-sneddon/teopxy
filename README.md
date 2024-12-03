@@ -6,7 +6,7 @@ This script is a proof of concept designed to facilitate the creation and conver
 
 1. **Convert OP-1 Drum Patches**:
    - Extracts individual samples from `.aif` drum patch files.
-   - Generates a `.preset` folder containing the audio samples and metadata.
+   - Generates a `.preset` folder containing the audio samples and metadata file (patch.json).
 
 2. **Create New Presets**:
    - Creates a new OP-XY drum preset from a folder of `.wav` files.
@@ -15,7 +15,7 @@ This script is a proof of concept designed to facilitate the creation and conver
 ## Usage
 
 ```bash
-python script.py <convert|create> <path> [--layout=<standard|number>]
+python teopxy.py <convert|create> <path> [--layout=<standard|number>]
 ```
 
 ### Commands
@@ -23,12 +23,18 @@ python script.py <convert|create> <path> [--layout=<standard|number>]
 - **convert**: Extracts samples and metadata from an existing `.aif` OP-1 drum patch.
 - **create**: Creates a new drum preset from a folder of `.wav` files.
 
-### Options
+### Convert options
 
 - `<path>`: The file path to the `.aif` file (for `convert`) or the folder containing `.wav` files (for `create`).
-- `--layout`: Specifies how samples should be assigned to keys. Options:
+
+
+### Create options
+- `<path>`: The path to a folder containing `.wav` files (for `create`). Also supports matching multiple folders using a wildcard.
+- `--layout`(optional): Specifies how samples should be assigned to keys. Options:
   - `standard` (default): Assigns samples based on keywords in filenames to match the OP-1 drum layout.
   - `number`: Assigns samples based on numerical ordering or alphabetical sorting.
+- `--output` (optional): The directory where presets will be saved. Defaults to the same directory as the source.
+- `--gaps` (optional): When assigning samples based on keyword matching, leave gaps in order to strictly adhere to the desired key mapping. If set to false then the order of samples will be adhered to, but no gaps will be create so all samples will be on arranged sequential keys. Defaults to true. 
 
 ## Standard OP-1 Drum Layout
 
@@ -47,21 +53,21 @@ When using the `standard` layout, the script attempts to match `.wav` file names
 | 11  | Open Hi-Hat        | `hihat`, `hi-hat`, `open`       |
 | 14  | Ride Cymbal        | `ride`, `cymbal`                |
 | 16  | Crash Cymbal       | `crash`, `cymbal`               |
-| 20–24 | Bass              | `bass`                          |
+| 20–24 | Bass              | `bass`, `synth`                          |
 
 ### Notes on File Matching
 
 - Files are assigned to keys based on keywords in their names.
-- Keywords containing multiple terms (e.g., `clap` and `hand`) require both terms to be present in the filename.
-- If multiple matches exist, files with more specific matches are preferred.
-- Any unused files are assigned to remaining empty key slots.
+- Keywords containing multiple terms (e.g., `clap` and `hand`) will try to match all terms in the filename, but will settle on fewer.
+- If multiple matches exist, files with the greatest number of keywords matched will be perferred.
+- Any unused files are assigned to any remaining empty key slots.
 
 ## Example Commands
 
 ### Convert an OP-1 Drum Patch
 
 ```bash
-python script.py convert path/to/drum_patch.aif
+python teopxy.py convert path/to/drum_patch.aif
 ```
 
 This will extract individual samples from the `.aif` file and save them in a `.preset` folder.
@@ -71,7 +77,7 @@ This will extract individual samples from the `.aif` file and save them in a `.p
 #### Using Standard Layout
 
 ```bash
-python script.py create path/to/samples --layout=standard
+python teopxy.py create path/to/samples --layout=standard
 ```
 
 This will assign `.wav` files to keys based on the OP-1 drum layout.
@@ -79,15 +85,15 @@ This will assign `.wav` files to keys based on the OP-1 drum layout.
 #### Using Number Layout
 
 ```bash
-python script.py create path/to/samples --layout=number
+python teopxy.py create "path/to/samples/*" --layout=number
 ```
 
-This will assign `.wav` files to keys numerically or alphabetically.
+This will process multiple directoryes under the samples directory, and will assign `.wav` files to keys numerically or alphabetically.
 
 ## Output
 
-- For both commands, a folder named `<base_name>.preset` is created in the same directory as the input file or folder.
-- The folder contains:
+- For both commands, a folder named `<base_name>.preset` is created with the same name as the input directory.
+- The directory contains:
   - Individual `.wav` files (for `convert`) or copies of input `.wav` files (for `create`).
   - A `patch.json` file containing metadata for the OP-1 drum preset.
 
@@ -101,7 +107,7 @@ This will assign `.wav` files to keys numerically or alphabetically.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-repo/op1-drum-preset-creator.git
+   git clone https://github.com/paul-sneddon/teopxy.git
    ```
 2. Install dependencies:
    ```bash
