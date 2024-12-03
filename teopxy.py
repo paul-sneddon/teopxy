@@ -5,6 +5,7 @@ import sys
 import struct
 import json
 import math
+import glob
 from pydub import AudioSegment
 
 MAXENDPOINT = 2147483646
@@ -214,7 +215,6 @@ def create_patch_json(output_dir, audio_files, metadata, total_duration_ms, num_
         json.dump(preset, f, indent=2)
     print(f"Exported {patch_file}")
 
-# Assigning samples to drum layout
 def assign_samples_to_layout(wav_files, layout):
     assignments = {
         1: "kick",
@@ -228,43 +228,58 @@ def assign_samples_to_layout(wav_files, layout):
         11: ["hihat", "hi-hat", "open"],
         14: ["ride", "cymbal"],
         16: ["crash", "cymbal"],
-        20: "bass",
-        21: "bass",
-        22: "bass",
-        23: "bass",
-        24: "bass"
+        20: ["bass", "synth"],
+        21: ["bass", "synth"],
+        22: ["bass", "synth"],
+        23: ["bass", "synth"],
+        24: ["bass", "synth"],
     }
 
     used_files = set()
     result = [None] * 24
 
-    def match_keywords(sample_name, keywords):
+    def match_keyword_count(sample_name, keywords):
+        """
+        Counts how many keywords from the list are found in the sample name.
+        """
         if isinstance(keywords, list):
-            return all(keyword in sample_name for keyword in keywords)
-        return keywords in sample_name
+            return sum(1 for keyword in keywords if keyword in sample_name)
+        return 1 if keywords in sample_name else 0
+
     print("Assigning matched samples to drum layout:\n")
     for key, keywords in assignments.items():
+        best_match = None
+        highest_match_count = 0
+
         for wav_file in wav_files:
-            if wav_file not in used_files and match_keywords(wav_file.lower(), keywords):
-                result[key - 1] = wav_file
-                print(f"Key {key}: {wav_file}")
-                used_files.add(wav_file)
-                break
+            if wav_file in used_files:
+                continue
+
+            # Calculate the match count for the current file
+            match_count = match_keyword_count(wav_file.lower(), keywords)
+
+            # If this file matches more keywords than the current best, prioritize it
+            if match_count > highest_match_count:
+                best_match = wav_file
+                highest_match_count = match_count
+
+        # Assign the best match if found
+        if best_match:
+            result[key - 1] = best_match
+            used_files.add(best_match)
+            print(f"Key {key}: {best_match} (Matched {highest_match_count} keywords)")
 
     print("Assigning unmatched samples to drum layout:\n")
     unused_files = [f for f in wav_files if f not in used_files]
     for i in range(24):
         if result[i] is None and unused_files:
-            # Print the key number and the file name along with matching keywords
             print(f"Key {i + 1}: {unused_files[0]}")
-
             result[i] = unused_files.pop(0)
-
     return result
 
 # Splitting OP-1 drum patch
 
-def split_op1_drum_patch(file_path):
+def split_op1_drum_patch(file_path, output_dir=None):
     metadata, total_samples = parse_op1_metadata(file_path)
     starts = metadata["start"]
     ends = metadata["end"]
@@ -281,13 +296,14 @@ def split_op1_drum_patch(file_path):
     print(f"Channels: {num_channels}")
 
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    output_dir = os.path.join(os.path.dirname(file_path), f"{base_name}.preset")
+    base_output_dir = output_dir or os.path.dirname(file_path)
+    output_dir = os.path.join(base_output_dir, f"{base_name}.preset")
     os.makedirs(output_dir, exist_ok=True)
 
     audio_files = []
 
     # Determine max length in seconds based on total duration
-    max_length_seconds = 20 if(total_duration_ms > 12000) or (num_channels > 1) else 12
+    max_length_seconds = 20 if (total_duration_ms > 12000 or num_channels > 1) else 12
 
     print(f"Max length: {max_length_seconds} seconds")
 
@@ -324,11 +340,12 @@ def split_op1_drum_patch(file_path):
     # Generate patch.json
     create_patch_json(output_dir, audio_files, metadata, total_duration_ms, audio.channels)
 
-# Creating a preset from WAV files
-def create_preset_from_wavs(folder_path, layout="standard"):
+def create_preset_from_wavs(folder_path, layout="standard", output_dir=None, leave_gaps=False):
+    print(f"Processing directory: {folder_path}")
+    print(f"Output directory: {output_dir}")
     if not os.path.isdir(folder_path):
         print(f"Error: Directory '{folder_path}' not found.")
-        sys.exit(1)
+        return
 
     wav_files = [f for f in os.listdir(folder_path) if f.endswith(".wav")]
 
@@ -341,7 +358,13 @@ def create_preset_from_wavs(folder_path, layout="standard"):
             wav_files.sort()
         audio_files = wav_files[:24]
 
-    output_dir = os.path.join(folder_path, os.path.basename(folder_path) + ".preset")
+    # Determine output directory
+    preset_name = os.path.basename(folder_path) + ".preset"
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        output_dir = os.path.join(output_dir, preset_name)
+    else:
+        output_dir = os.path.join(folder_path, preset_name)
     os.makedirs(output_dir, exist_ok=True)
 
     copied_files = []
@@ -353,30 +376,67 @@ def create_preset_from_wavs(folder_path, layout="standard"):
             os.makedirs(os.path.dirname(destination_path), exist_ok=True)
             with open(source_path, 'rb') as src, open(destination_path, 'wb') as dest:
                 dest.write(src.read())
-
+        else:   
+            if leave_gaps:
+                copied_files.append(None)
+    
     create_patch_json(output_dir, copied_files, None, 0, 1)
+
+def process_directories_with_wildcard(path_pattern, layout="standard", output_dir=None, leave_gaps=False):
+    directories = [path for path in glob.glob(path_pattern) if os.path.isdir(path)]
+
+    if not directories:
+        print(f"No directories match the pattern: {path_pattern}")
+        return
+
+    for folder_path in directories:
+        print(f"Processing directory: {folder_path}")
+        create_preset_from_wavs(folder_path, layout=layout, output_dir=output_dir, leave_gaps=leave_gaps)
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: python script.py <convert|create> <path> [--layout=<standard|number>]")
+        print("Usage: python script.py <convert|create> <path|pattern> [--layout=<standard|number>] [--output=<output_dir>]")
         sys.exit(1)
 
     command = sys.argv[1].lower()
     path = sys.argv[2]
     layout = "standard"
     output_dir = None
+    leave_gaps = "true"
 
-    # Check for optional layout parameter
-    if len(sys.argv) > 3 and sys.argv[3].startswith("--layout="):
-        layout = sys.argv[3].split("=")[1].lower()
-    # # Check for optional output directory parameter
-    # if len(sys.argv) > 4 and sys.argv[4].startswith("--output="):
-    #     output_dir = sys.argv[4].split("=")[1]
+    # Parse optional arguments
+    for arg in sys.argv[3:]:
+        if arg.startswith("--layout="):
+            layout = arg.split("=")[1].lower()
+        elif arg.startswith("--output="):
+            output_dir = arg.split("=")[1]
+        elif arg.startswith("--gaps="):
+            leave_gaps = arg.split("=")[1]
+    
+    # Default leave_gaps to True unless explicitly set to False
+    leave_gaps = False if leave_gaps == "false" else True 
+
+    # Expand the output directory path
+    if output_dir:
+        output_dir = os.path.expanduser(output_dir)
+        output_dir = os.path.expandvars(output_dir)
+
+    # Check if the output directory is valid, if not, it it's parent is valid then create it
+    if output_dir and not os.path.isdir(output_dir):
+        parent_dir = os.path.dirname(output_dir)
+        if os.path.isdir(parent_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        else:
+            print(f"Error: Output directory '{output_dir}' not found.")
+            sys.exit(1)
 
     if command == "convert":
-        split_op1_drum_patch(path)
+        split_op1_drum_patch(path, output_dir=output_dir)
     elif command == "create":
-        create_preset_from_wavs(path, layout=layout)
+        if "*" in path or "?" in path or "[" in path:
+            process_directories_with_wildcard(path, layout=layout, output_dir=output_dir, leave_gaps=leave_gaps)
+        else:
+            create_preset_from_wavs(path, layout=layout, output_dir=output_dir, leave_gaps=leave_gaps)
     else:
         print("Error: Unknown command. Use 'convert' or 'create'.")
         sys.exit(1)
